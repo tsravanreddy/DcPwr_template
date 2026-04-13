@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Viasat.PTE.CCS.DCPwrDriverStub</RootNamespace>
+    <AssemblyName>Viasat.PTE.CCS.DCPwrDriverStub</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- InstrumentFoundation NuGet Package -->
+    <!-- <PackageReference Include="Viasat.PTE.CCS.Instruments" Version="1.0.0" /> -->
+  </ItemGroup>
+
+</Project>

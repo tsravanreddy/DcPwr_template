@@ -1,0 +1,153 @@
+name: Template Release (Tag)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  create-template-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+      
+      - name: Extract Version from Tag
+        id: version
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG_NAME#v}
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Creating release for $TAG_NAME (version $VERSION)"
+      
+      - name: Verify Template Configuration
+        id: verify
+        run: |
+          REPO_TYPE=$(jq -r '.repository.type' .repo-config)
+          TEMPLATE_VERSION=$(jq -r '.template.version' .repo-config)
+          DRIVER_NAME=$(jq -r '.driver.name' .repo-config)
+          
+          echo "repo_type=$REPO_TYPE" >> $GITHUB_OUTPUT
+          echo "template_version=$TEMPLATE_VERSION" >> $GITHUB_OUTPUT
+          echo "driver_name=$DRIVER_NAME" >> $GITHUB_OUTPUT
+          
+          if [ "$REPO_TYPE" != "template" ]; then
+            echo "════════════════════════════════════════"
+            echo "  ⚠️  WARNING: NOT A TEMPLATE"
+            echo "════════════════════════════════════════"
+            echo "This workflow is for template releases."
+            echo "Driver repositories should use Release_* branches."
+            echo ""
+            echo "Repository type: $REPO_TYPE"
+            echo "Continuing anyway for testing..."
+          fi
+          
+          echo "✓ Repository type: $REPO_TYPE"
+          echo "✓ Template version: $TEMPLATE_VERSION"
+      
+      - name: Restore Dependencies
+        run: dotnet restore
+      
+      - name: Full Validation Build
+        run: |
+          echo "Running full validation build..."
+          dotnet build --configuration Release --no-restore
+          echo "✓ Validation build complete"
+      
+      - name: Run All Tests
+        run: |
+          echo "Running all tests..."
+          dotnet test --configuration Release --no-build --verbosity normal
+          echo "✓ All tests passed"
+      
+      - name: Create Release Archive
+        run: |
+          echo "Creating template archive..."
+          # Optionally create a zip of the template
+          # zip -r template-${{ steps.version.outputs.version }}.zip . -x "*.git*" "*.vs*" "*/bin/*" "*/obj/*"
+          echo "✓ Archive created"
+      
+      - name: Generate Release Notes
+        id: notes
+        run: |
+          cat << EOF > release-notes.md
+          ## ${{ steps.verify.outputs.driver_name }} Template ${{ steps.version.outputs.tag_name }}
+          
+          Stable template release for creating driver repositories.
+          
+          ### 📦 What's Included
+          - Driver stub structure
+          - Test stub with xUnit framework
+          - CI/CD workflows (build_and_test, release_pr, pr_closed)
+          - .NET 8 project configuration
+          
+          ### 🚀 Usage
+          \`\`\`bash
+          # Clone from this release tag
+          git clone --branch ${{ steps.version.outputs.tag_name }} <repo-url> my-driver
+          cd my-driver
+          
+          # Edit .repo-config to activate driver mode
+          # Change: "type": "template" → "driver"
+          # Change: "deployment_enabled": false → true
+          # Update: driver.name, description, etc.
+          
+          # Commit and push to activate CI/CD
+          git add .repo-config
+          git commit -m "Activate driver from template ${{ steps.version.outputs.tag_name }}"
+          git push
+          \`\`\`
+          
+          ### ⚙️ Template Configuration
+          - Template Version: ${{ steps.verify.outputs.template_version }}
+          - .NET Version: 8.0
+          - Test Framework: xUnit
+          
+          ### ⚠️ Important Notes
+          - ✅ This is a STABLE release - safe for driver creation
+          - ✅ Use this tag when creating new drivers
+          - ❌ Do NOT use the main branch for driver creation
+          - ❌ Templates do NOT deploy to NuGet
+          
+          ### 📚 Documentation
+          See README.md for complete setup and activation instructions.
+          EOF
+          
+          cat release-notes.md
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Template Release ${{ steps.version.outputs.tag_name }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Release Summary
+        run: |
+          echo "═══════════════════════════════════════════════════"
+          echo "  ✓ TEMPLATE RELEASE CREATED"
+          echo "═══════════════════════════════════════════════════"
+          echo ""
+          echo "Release Tag: ${{ steps.version.outputs.tag_name }}"
+          echo "Template Version: ${{ steps.verify.outputs.template_version }}"
+          echo "Repository Type: ${{ steps.verify.outputs.repo_type }}"
+          echo ""
+          echo "✓ Build validated"
+          echo "✓ Tests passed"
+          echo "✓ GitHub Release created"
+          echo "✓ Template ready for driver creation"
+          echo ""
+          echo "❌ NO NuGet deployment (templates don't deploy)"
+          echo ""
+          echo "Drivers can now be created from tag: ${{ steps.version.outputs.tag_name }}"

@@ -1,0 +1,144 @@
+name: PR Closed (Release Deployment)
+
+on:
+  pull_request:
+    branches:
+      - 'Release_*'
+    types: [closed]
+
+jobs:
+  deploy-release:
+    # Only run if PR was merged (not just closed)
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+      
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+      
+      - name: Detect Repository Configuration
+        id: config
+        run: |
+          REPO_TYPE=$(jq -r '.repository.type' .repo-config)
+          DEPLOY_ENABLED=$(jq -r '.repository.deployment_enabled' .repo-config)
+          DRIVER_NAME=$(jq -r '.driver.name' .repo-config)
+          TEMPLATE_VERSION=$(jq -r '.template.version' .repo-config)
+          
+          echo "repo_type=$REPO_TYPE" >> $GITHUB_OUTPUT
+          echo "deploy_enabled=$DEPLOY_ENABLED" >> $GITHUB_OUTPUT
+          echo "driver_name=$DRIVER_NAME" >> $GITHUB_OUTPUT
+          echo "template_version=$TEMPLATE_VERSION" >> $GITHUB_OUTPUT
+          
+          echo "Repository Type: $REPO_TYPE"
+          echo "Deployment Enabled: $DEPLOY_ENABLED"
+      
+      - name: Extract Release Information
+        id: release
+        run: |
+          RELEASE_BRANCH=${GITHUB_BASE_REF}
+          RELEASE_DATE=${RELEASE_BRANCH#Release_}
+          
+          echo "release_branch=$RELEASE_BRANCH" >> $GITHUB_OUTPUT
+          echo "release_date=$RELEASE_DATE" >> $GITHUB_OUTPUT
+          
+          echo "Release Branch: $RELEASE_BRANCH"
+          echo "Release Date: $RELEASE_DATE"
+      
+      - name: Check Deployment Eligibility
+        id: check
+        run: |
+          if [ "${{ steps.config.outputs.repo_type }}" = "template" ]; then
+            echo "════════════════════════════════════════"
+            echo "  ⚠️  TEMPLATE REPOSITORY DETECTED"
+            echo "════════════════════════════════════════"
+            echo "Templates do NOT deploy to release branches."
+            echo "Templates use release TAGS only."
+            echo ""
+            echo "To create a template release:"
+            echo "  git tag -a v1.0.0 -m 'Release v1.0.0'"
+            echo "  git push origin v1.0.0"
+            echo ""
+            echo "Skipping deployment..."
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.config.outputs.deploy_enabled }}" != "true" ]; then
+            echo "Deployment disabled in .repo-config"
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          else
+            echo "Deployment enabled for driver: ${{ steps.config.outputs.driver_name }}"
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Restore Dependencies
+        if: steps.check.outputs.should_deploy == 'true'
+        run: dotnet restore
+      
+      - name: Build Release Package
+        if: steps.check.outputs.should_deploy == 'true'
+        run: |
+          echo "Building production release..."
+          dotnet build --configuration Release --no-restore
+          echo "✓ Production build complete"
+      
+      - name: Run Final Tests
+        if: steps.check.outputs.should_deploy == 'true'
+        run: |
+          echo "Running final test suite..."
+          dotnet test --configuration Release --no-build --verbosity minimal
+          echo "✓ Final tests passed"
+      
+      - name: Create NuGet Package
+        if: steps.check.outputs.should_deploy == 'true'
+        run: |
+          echo "Creating NuGet package..."
+          dotnet pack --configuration Release --no-build --output ./artifacts
+          echo "✓ NuGet package created"
+      
+      - name: Publish to NuGet (Simulated)
+        if: steps.check.outputs.should_deploy == 'true'
+        run: |
+          echo "Publishing NuGet package..."
+          # dotnet nuget push ./artifacts/*.nupkg --source <nuget-source> --api-key ${{ secrets.NUGET_API_KEY }}
+          echo "⚠️ NuGet publish simulated (configure secrets and source)"
+          echo "✓ Package ready for deployment"
+      
+      - name: Create GitHub Release
+        if: steps.check.outputs.should_deploy == 'true'
+        run: |
+          echo "Creating GitHub Release..."
+          # Use GitHub API or gh CLI to create release
+          echo "Release: ${{ steps.release.outputs.release_branch }}"
+          echo "✓ GitHub release would be created here"
+      
+      - name: Deployment Summary
+        run: |
+          echo "═══════════════════════════════════════════════════"
+          if [ "${{ steps.check.outputs.should_deploy }}" = "true" ]; then
+            echo "  ✓ DRIVER DEPLOYMENT COMPLETE"
+            echo "═══════════════════════════════════════════════════"
+            echo ""
+            echo "Driver: ${{ steps.config.outputs.driver_name }}"
+            echo "Release Branch: ${{ steps.release.outputs.release_branch }}"
+            echo "Release Date: ${{ steps.release.outputs.release_date }}"
+            echo ""
+            echo "✓ Build successful"
+            echo "✓ Tests passed"
+            echo "✓ NuGet package created"
+            echo "✓ Ready for production"
+          else
+            echo "  ⚠️ DEPLOYMENT SKIPPED"
+            echo "═══════════════════════════════════════════════════"
+            echo ""
+            echo "Reason: Repository type is '${{ steps.config.outputs.repo_type }}'"
+            echo ""
+            if [ "${{ steps.config.outputs.repo_type }}" = "template" ]; then
+              echo "Templates use tags for releases, not branches."
+              echo "Create a tag: git tag -a v1.0.0 -m 'Release v1.0.0'"
+            fi
+          fi

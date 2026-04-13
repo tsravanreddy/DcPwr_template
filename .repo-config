@@ -1,0 +1,22 @@
+{
+  "repository": {
+    "type": "template",
+    "deployment_enabled": false
+  },
+  "template": {
+    "version": "1.0.0",
+    "stable_tag": "v1.0.0",
+    "instrument_class": "DCPwr",
+    "base_namespace": "Viasat.PTE.CCS"
+  },
+  "driver": {
+    "name": "DCPwrDriverStub",
+    "initial_version": "1.0.0",
+    "description": "DC Power Driver Template"
+  },
+  "autobot": {
+    "component_script": "drivercomponent.py",
+    "build_key": "--drivercomponent",
+    "base_version": "1.0.0"
+  }
+}

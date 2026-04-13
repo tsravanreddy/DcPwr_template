@@ -1,0 +1,83 @@
+name: Build and Test
+
+on:
+  push:
+    branches-ignore:
+      - gh-pages
+      - 'Release_*'
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+      
+      - name: Detect Repository Type
+        id: detect
+        run: |
+          if [ ! -f ".repo-config" ]; then
+            echo "ERROR: .repo-config missing!"
+            exit 1
+          fi
+          
+          REPO_TYPE=$(jq -r '.repository.type' .repo-config)
+          DEPLOY_ENABLED=$(jq -r '.repository.deployment_enabled' .repo-config)
+          DRIVER_NAME=$(jq -r '.driver.name' .repo-config)
+          
+          echo "repo_type=$REPO_TYPE" >> $GITHUB_OUTPUT
+          echo "deploy_enabled=$DEPLOY_ENABLED" >> $GITHUB_OUTPUT
+          echo "driver_name=$DRIVER_NAME" >> $GITHUB_OUTPUT
+          
+          echo "Repository Type: $REPO_TYPE"
+          echo "Deployment Enabled: $DEPLOY_ENABLED"
+          echo "Driver Name: $DRIVER_NAME"
+      
+      - name: Restore Dependencies
+        run: dotnet restore
+      
+      - name: Build Solution
+        run: |
+          echo "Building ${{ steps.detect.outputs.driver_name }}..."
+          dotnet build --configuration Release --no-restore
+          echo "✓ Build complete"
+      
+      - name: Run Tests
+        run: |
+          echo "Running tests..."
+          dotnet test --configuration Release --no-build --verbosity normal
+          echo "✓ Tests complete"
+      
+      - name: Deployment Status
+        run: |
+          if [ "${{ steps.detect.outputs.repo_type }}" = "template" ]; then
+            echo "════════════════════════════════════════"
+            echo "  TEMPLATE BUILD COMPLETE"
+            echo "════════════════════════════════════════"
+            echo "✓ Build successful"
+            echo "✓ Tests passed"
+            echo "⚠️ NuGet deployment SKIPPED (template mode)"
+            echo ""
+            echo "This is a template repository."
+            echo "To create a driver, see README.md"
+          else
+            echo "════════════════════════════════════════"
+            echo "  DRIVER BUILD COMPLETE"
+            echo "════════════════════════════════════════"
+            echo "✓ Build successful"
+            echo "✓ Tests passed"
+            echo "✓ Ready for deployment"
+            echo ""
+            echo "Driver: ${{ steps.detect.outputs.driver_name }}"
+            echo "Deployment: ${{ steps.detect.outputs.deploy_enabled }}"
+          fi
